@@ -1,29 +1,33 @@
 package oldmana.md.server.ai;
 
 import oldmana.md.server.Player;
+import oldmana.md.server.state.ActionState;
 
 public class RLBot extends PlayerAI {
+
     public RLBot(Player player) {
         super(player);
-        // TODO Auto-generated constructor stub
     }
 
     @Override
     public void doAction() {
-        // Send current state to Python RL agent
-        // Wait for action
-        // Execute action in Java game
+        // 1. Grab the current game state
+        ActionState state = getServer().getGameState().getActionState();
+
+        // 2. For now, just log it to check we have access
+        System.out.println("RLBot sees state: " + state);
+
+        // 3. Pick a dummy action (like ending the turn)
+        getPlayer().endTurn();
     }
 
     @Override
     public double getWinThreat(Player player) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getWinThreat'");
+        return 0;
     }
 
     @Override
     public double getRentThreat(Player player) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getRentThreat'");
+        return 0;
     }
 }

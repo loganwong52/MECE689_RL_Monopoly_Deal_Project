@@ -37,556 +37,455 @@ import oldmana.md.common.net.packet.client.PacketQuit;
 import oldmana.md.common.net.packet.client.action.PacketActionDraw;
 import oldmana.md.server.MDServer;
 
-public class MDClient
-{
+public class MDClient {
 	private static MDClient instance;
-	
+
 	public static final String VERSION = "0.7.1 Dev";
-	
+
 	private MDFrame window;
-	
+
 	private File dataFolder;
-	
+
 	private Settings settings;
-	
+
 	private Scheduler scheduler;
-	
+
 	private ThePlayer thePlayer;
 	private List<Player> otherPlayers = new ArrayList<Player>();
 	private List<Player> turnOrder = new ArrayList<Player>();
 	private List<Player> othersOrdered = new ArrayList<Player>();
-	
+
 	private GameState gameState;
-	
+
 	private GameRules rules;
-	
+
 	private boolean awaitingResponse;
-	
+
 	private Deck deck;
 	private DiscardPile discard;
 	private VoidCollection voidCollection;
-	
+
 	private NetClientHandler netHandler;
-	
+
 	private ServerConnection connection;
-	
+
 	public EventQueue eventQueue;
-	
+
 	public int timeSincePing;
-	
-	
+
 	private MDServer integratedServer;
-	
-	
+
 	private boolean debug = false;
 	private boolean developerMode = false;
-	
-	public MDClient()
-	{
+
+	public MDClient() {
 		instance = this;
 	}
-	
-	public void startClient()
-	{
+
+	public void startClient() {
 		new JFXPanel(); // I guess we'll do this for certain reasons
-		
+
 		GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
-		try
-		{
-			String[] fontNames = new String[] {"ITCKabelStd-Bold.otf", "ITCKabelStd-Book.otf"};
-			for (String fontName : fontNames)
-			{
-				try (InputStream is = MDClient.class.getResourceAsStream("/oldmana/md/client/gui/font/" + fontName))
-				{
+		try {
+			String[] fontNames = new String[] { "ITCKabelStd-Bold.otf", "ITCKabelStd-Book.otf" };
+			for (String fontName : fontNames) {
+				try (InputStream is = MDClient.class.getResourceAsStream("/oldmana/md/client/gui/font/" + fontName)) {
 					ge.registerFont(Font.createFont(Font.TRUETYPE_FONT, is));
 				}
 			}
-		}
-		catch (Exception e)
-		{
+		} catch (Exception e) {
 			throw new RuntimeException("Could not load fonts", e);
 		}
-		
+
 		scheduler = new Scheduler();
 		scheduler.scheduleFrameboundTask(task -> eventQueue.tick());
-		scheduler.scheduleTask(task ->
-		{
-			if (connection != null && connection.isAlive())
-			{
-				if (++timeSincePing > 50)
-				{
+		scheduler.scheduleTask(task -> {
+			if (connection != null && connection.isAlive()) {
+				if (++timeSincePing > 50) {
 					getTableScreen().getTopbar().setText("Disconnected: Timed out");
 					connection.closeGracefully();
 				}
 			}
 		}, 1000, true);
-		
+
 		eventQueue = new EventQueue();
-		
+
 		netHandler = new NetClientHandler(this);
-		
+
 		gameState = new GameState();
-		
+
 		rules = new GameRules();
-		
+
 		settings = new Settings();
-		
+
 		File folder = findUserData();
-		
-		if (folder == null)
-		{
+
+		if (folder == null) {
 			// If there's a local runtime folder, then this must be installed
-			if (new File("runtime").exists())
-			{
+			if (new File("runtime").exists()) {
 				folder = getLocalFolder();
 				folder.mkdirs();
 				setDataFolder(folder);
 				getSettings().setLocation(folder);
 			}
 		}
-		
-		if (folder != null)
-		{
+
+		if (folder != null) {
 			dataFolder = folder;
 			settings.loadSettings(folder);
 			SoundSystem.loadCache();
 		}
 		scheduler.setFPS(settings.getInt("framerate"));
-		
+
 		developerMode = settings.getBoolean("developerMode");
-		
+
 		window = new MDFrame(folder == null);
-		
-		
+
 		Timer timer = new Timer(20, event -> tickClient());
 		timer.setRepeats(true);
 		timer.start();
 	}
-	
+
 	// RUNS ON SWING THREAD
-	public void tickClient()
-	{
-		if (connection != null)
-		{
+	public void tickClient() {
+		if (connection != null) {
 			netHandler.processPackets(connection);
 		}
 	}
-	
-	public File getDataFolder()
-	{
+
+	public File getDataFolder() {
 		return dataFolder;
 	}
-	
-	public void setDataFolder(File folder)
-	{
+
+	public void setDataFolder(File folder) {
 		dataFolder = folder;
 	}
-	
-	public File findUserData()
-	{
+
+	public File findUserData() {
 		File portable = getJarFolder();
-		for (File f : portable.listFiles())
-		{
-			if (f.getName().equals("settings.dat"))
-			{
+		for (File f : portable.listFiles()) {
+			if (f.getName().equals("settings.dat")) {
 				return portable;
 			}
 		}
 		File local = getLocalFolder();
-		if (local.exists())
-		{
+		if (local.exists()) {
 			return local;
 		}
 		return null;
 	}
-	
-	public File getJarFolder()
-	{
-		try
-		{
+
+	public File getJarFolder() {
+		try {
 			return new File(MDClient.class.getProtectionDomain().getCodeSource().getLocation().toURI()).getParentFile();
-		}
-		catch (URISyntaxException e)
-		{
+		} catch (URISyntaxException e) {
 			e.printStackTrace();
 		}
 		return null;
 	}
-	
-	public File getLocalFolder()
-	{
+
+	public File getLocalFolder() {
 		String dirPath;
-		
+
 		String os = System.getProperty("os.name").toLowerCase();
-		if (os.contains("win"))
-		{
+		if (os.contains("win")) {
 			dirPath = System.getenv("AppData");
-		}
-		else
-		{
+		} else {
 			// lol who knows if this actually will work properly on linux/mac
 			dirPath = System.getProperty("user.home");
-			if (os.contains("mac"))
-			{
+			if (os.contains("mac")) {
 				dirPath += "/Library/Application Support";
 			}
 		}
 		return new File(dirPath, "Monopoly Deal");
 	}
-	
-	public void loadSettings(File folder)
-	{
+
+	public void loadSettings(File folder) {
 		settings.loadSettings(new File(folder, "settings.dat"));
 	}
-	
-	public Settings getSettings()
-	{
+
+	public Settings getSettings() {
 		return settings;
 	}
-	
-	public Scheduler getScheduler()
-	{
+
+	public Scheduler getScheduler() {
 		return scheduler;
 	}
-	
-	public EventQueue getEventQueue()
-	{
+
+	public EventQueue getEventQueue() {
 		return eventQueue;
 	}
-	
-	public ServerConnection getServerConnection()
-	{
+
+	public ServerConnection getServerConnection() {
 		return connection;
 	}
-	
-	public void setServerConnection(ServerConnection connection)
-	{
+
+	public void setServerConnection(ServerConnection connection) {
 		this.connection = connection;
 	}
-	
-	public void connectToServer(String ip, int port) throws Exception
-	{
+
+	public void connectToServer(String ip, int port) throws Exception {
 		MJConnection connect = new MJConnection();
 		connect.connect(ip, port, 5000);
 		connection = new ServerConnection(connect);
 		getTableScreen().getTopbar().setText("Logging in..");
 	}
-	
-	public boolean isConnected()
-	{
+
+	public boolean isConnected() {
 		return connection != null;
 	}
-	
-	public void setDeck(Deck deck)
-	{
+
+	public void setDeck(Deck deck) {
 		this.deck = deck;
 		getTableScreen().setDeck(deck);
 	}
-	
-	public Deck getDeck()
-	{
+
+	public Deck getDeck() {
 		return deck;
 	}
-	
-	public void setDiscardPile(DiscardPile discard)
-	{
+
+	public void setDiscardPile(DiscardPile discard) {
 		this.discard = discard;
 		getTableScreen().setDiscardPile(discard);
 	}
-	
-	public DiscardPile getDiscardPile()
-	{
+
+	public DiscardPile getDiscardPile() {
 		return discard;
 	}
-	
-	public void setVoidCollection(VoidCollection voidCollection)
-	{
+
+	public void setVoidCollection(VoidCollection voidCollection) {
 		this.voidCollection = voidCollection;
 		getTableScreen().setVoidCollection(voidCollection);
 	}
-	
-	public VoidCollection getVoidCollection()
-	{
+
+	public VoidCollection getVoidCollection() {
 		return voidCollection;
 	}
-	
-	public List<Player> getAllPlayers()
-	{
+
+	public List<Player> getAllPlayers() {
 		List<Player> players = new ArrayList<Player>(otherPlayers);
-		if (thePlayer != null)
-		{
+		if (thePlayer != null) {
 			players.add(thePlayer);
 		}
 		return players;
 	}
-	
-	public List<Player> getOtherPlayers()
-	{
+
+	public List<Player> getOtherPlayers() {
 		return otherPlayers;
 	}
-	
-	public List<Player> getTurnOrder()
-	{
+
+	public List<Player> getTurnOrder() {
 		return turnOrder;
 	}
-	
-	public void setTurnOrder(List<Player> order)
-	{
+
+	public void setTurnOrder(List<Player> order) {
 		turnOrder = order;
 		othersOrdered.clear();
 		int selfIndex = turnOrder.indexOf(getThePlayer());
-		for (int i = 1 ; i < turnOrder.size() ; i++)
-		{
+		for (int i = 1; i < turnOrder.size(); i++) {
 			othersOrdered.add(turnOrder.get((selfIndex + i) % turnOrder.size()));
 		}
 		getTableScreen().getOpponents().invalidate();
 		getTableScreen().getOpponents().updateGraphics();
 	}
-	
-	public Player getPlayerByID(int id)
-	{
-		if (thePlayer.getID() == id)
-		{
+
+	public Player getPlayerByID(int id) {
+		if (thePlayer.getID() == id) {
 			return thePlayer;
 		}
-		for (Player player : otherPlayers)
-		{
-			if (player.getID() == id)
-			{
+		for (Player player : otherPlayers) {
+			if (player.getID() == id) {
 				return player;
 			}
 		}
 		return null;
 	}
-	
-	public List<Player> getPlayersByIDs(int[] ids)
-	{
+
+	public List<Player> getPlayersByIDs(int[] ids) {
 		List<Player> players = new ArrayList<Player>(ids.length);
-		for (int id : ids)
-		{
+		for (int id : ids) {
 			players.add(getPlayerByID(id));
 		}
 		return players;
 	}
-	
-	public void addPlayer(Player player)
-	{
+
+	public void addPlayer(Player player) {
 		otherPlayers.add(player);
 		turnOrder.add(player);
 		othersOrdered.add(player);
 		getTableScreen().addPlayer(player);
 	}
-	
-	public void destroyPlayer(Player player)
-	{
+
+	public void destroyPlayer(Player player) {
 		otherPlayers.remove(player);
 		turnOrder.remove(player);
 		getTableScreen().removePlayer(player);
 		getTableScreen().repaint();
 	}
-	
-	public List<Player> getOtherPlayersOrdered()
-	{
+
+	public List<Player> getOtherPlayersOrdered() {
 		return othersOrdered;
 	}
-	
-	public Player getThePlayer()
-	{
+
+	public Player getThePlayer() {
 		return thePlayer;
 	}
-	
-	public boolean isThePlayersTurn()
-	{
+
+	public boolean isThePlayersTurn() {
 		return getGameState().getWhoseTurn() == thePlayer;
 	}
-	
-	public boolean canPlayCard()
-	{
+
+	public boolean canPlayCard() {
 		return isThePlayersTurn() && getGameState().getActionState() instanceof ActionStatePlay;
 	}
-	
-	public boolean canActFreely()
-	{
+
+	public boolean canActFreely() {
 		ActionState state = getGameState().getActionState();
 		return isThePlayersTurn() && (state instanceof ActionStatePlay || state instanceof ActionStateFinishTurn);
 	}
-	
-	public boolean canModifySets()
-	{
+
+	public boolean canModifySets() {
 		ActionState state = getGameState().getActionState();
-		return isThePlayersTurn() && (state instanceof ActionStatePlay || state instanceof ActionStateFinishTurn || state instanceof ActionStateDiscard);
+		return isThePlayersTurn() && (state instanceof ActionStatePlay || state instanceof ActionStateFinishTurn
+				|| state instanceof ActionStateDiscard);
 	}
-	
-	public void createThePlayer(int id, String name)
-	{
+
+	public void createThePlayer(int id, String name) {
 		thePlayer = new ThePlayer(this, id, name);
 		turnOrder.add(thePlayer);
 		getTableScreen().addPlayer(thePlayer);
 	}
-	
-	public boolean canDraw()
-	{
+
+	public boolean canDraw() {
 		ActionState state = getGameState().getActionState();
 		return state instanceof ActionStateDraw && state.getActionOwner() == getThePlayer();
 	}
-	
-	public void draw()
-	{
+
+	public void draw() {
 		sendPacket(new PacketActionDraw());
 		setAwaitingResponse(true);
 	}
-	
-	public void sendPacket(Packet packet)
-	{
+
+	public void sendPacket(Packet packet) {
 		connection.addOutPacket(packet);
 	}
-	
-	public GameState getGameState()
-	{
+
+	public GameState getGameState() {
 		return gameState;
 	}
-	
-	public GameRules getRules()
-	{
+
+	public GameRules getRules() {
 		return rules;
 	}
-	
-	public void setAwaitingResponse(boolean awaitingResponse)
-	{
-		if (this.awaitingResponse != awaitingResponse)
-		{
+
+	public void setAwaitingResponse(boolean awaitingResponse) {
+		if (this.awaitingResponse != awaitingResponse) {
 			this.awaitingResponse = awaitingResponse;
 			((MDHand) getThePlayer().getHand().getUI()).removeOverlay();
 		}
 	}
-	
-	public boolean isAwaitingResponse()
-	{
+
+	public boolean isAwaitingResponse() {
 		return awaitingResponse;
 	}
-	
-	public boolean isInputBlocked()
-	{
+
+	public boolean isInputBlocked() {
 		return eventQueue.hasTasks() || awaitingResponse || getGameState().getClientActionState() != null;
 	}
-	
-	public boolean isDebugEnabled()
-	{
+
+	public boolean isDebugEnabled() {
 		return debug;
 	}
-	
-	public void setDebugEnabled(boolean debug)
-	{
+
+	public void setDebugEnabled(boolean debug) {
 		this.debug = debug;
 	}
-	
-	public boolean isDevMode()
-	{
+
+	public boolean isDevMode() {
 		return developerMode;
 	}
-	
-	public MDFrame getWindow()
-	{
+
+	public MDFrame getWindow() {
 		return window;
 	}
-	
-	public TableScreen getTableScreen()
-	{
+
+	public TableScreen getTableScreen() {
 		return window.getTableScreen();
 	}
-	
-	public void addTableComponent(JComponent component, int layer)
-	{
+
+	public void addTableComponent(JComponent component, int layer) {
 		getTableScreen().add(component, new Integer(layer));
 	}
-	
-	public void removeTableComponent(JComponent component)
-	{
-		if (component != null)
-		{
+
+	public void removeTableComponent(JComponent component) {
+		if (component != null) {
 			getTableScreen().remove(component);
 		}
 	}
-	
-	public void removeTableComponents(List<? extends JComponent> components)
-	{
-		if (components != null)
-		{
-			for (JComponent component : components)
-			{
+
+	public void removeTableComponents(List<? extends JComponent> components) {
+		if (components != null) {
+			for (JComponent component : components) {
 				removeTableComponent(component);
 			}
 		}
 	}
-	
-	public void removeTableComponents(JComponent... components)
-	{
-		for (JComponent component : components)
-		{
+
+	public void removeTableComponents(JComponent... components) {
+		for (JComponent component : components) {
 			removeTableComponent(component);
 		}
 	}
-	
-	public void disconnect()
-	{
+
+	public void disconnect() {
 		disconnect(null);
 	}
-	
-	public void disconnect(String reason)
-	{
+
+	public void disconnect(String reason) {
 		disconnect(reason, false);
 	}
-	
-	public void disconnect(String reason, boolean closing)
-	{
-		if (connection != null)
-		{
+
+	public void disconnect(String reason, boolean closing) {
+		if (connection != null) {
 			sendPacket(new PacketQuit(reason));
-			while ((connection.hasOutPackets() || connection.isSendingPackets()) && connection.isAlive())
-			{
-				try
-				{
+			while ((connection.hasOutPackets() || connection.isSendingPackets()) && connection.isAlive()) {
+				try {
 					Thread.sleep(1);
+				} catch (InterruptedException e) {
 				}
-				catch (InterruptedException e) {}
 			}
-			if (!hasIntegratedServer())
-			{
+			if (!hasIntegratedServer()) {
 				connection.close();
 			}
 			connection = null;
 		}
-		if (hasIntegratedServer())
-		{
+		if (hasIntegratedServer()) {
 			getIntegratedServer().shutdown();
 			getTableScreen().getTopbar().setText("Shutting down internal server..");
 			getTableScreen().paintImmediately(getTableScreen().getVisibleRect());
 			getIntegratedServer().waitForShutdown();
 			setIntegratedServer(null);
 		}
-		if (!closing)
-		{
+		if (!closing) {
 			resetGame();
-			
+
 			timeSincePing = 0;
-			
+
 			getWindow().displayMenu();
 		}
 	}
-	
-	public void resetGame()
-	{
+
+	public void resetGame() {
 		getGameState().cleanup();
-		
+
 		System.out.println(getGameState().getActionState());
 		System.out.println(getGameState().getPlayerTurn());
-		
-		if (eventQueue.getCurrentTask() instanceof CardMove)
-		{
+
+		if (eventQueue.getCurrentTask() instanceof CardMove) {
 			removeTableComponent(((CardMove) eventQueue.getCurrentTask()).getComponent());
 		}
 		eventQueue.clearTasks();
-		
+
 		awaitingResponse = false;
 		getTableScreen().getDeck().reset();
 		getTableScreen().getDiscardPile().reset();
@@ -595,42 +494,36 @@ public class MDClient
 		deck = null;
 		discard = null;
 		voidCollection = null;
-		
-		for (Player p : new ArrayList<Player>(getOtherPlayers()))
-		{
+
+		for (Player p : new ArrayList<Player>(getOtherPlayers())) {
 			destroyPlayer(p);
 		}
-		if (thePlayer != null)
-		{
+		if (thePlayer != null) {
 			getTableScreen().removePlayer(thePlayer);
 		}
 		thePlayer = null;
 		otherPlayers.clear();
 		turnOrder.clear();
 		othersOrdered.clear();
-		
+
 		Card.getRegisteredCards().clear();
 		CardCollection.getRegisteredCardCollections().clear();
 		PropertyColor.clearColors();
 	}
-	
-	public boolean hasIntegratedServer()
-	{
+
+	public boolean hasIntegratedServer() {
 		return integratedServer != null;
 	}
-	
-	public MDServer getIntegratedServer()
-	{
+
+	public MDServer getIntegratedServer() {
 		return integratedServer;
 	}
-	
-	public void setIntegratedServer(MDServer server)
-	{
+
+	public void setIntegratedServer(MDServer server) {
 		integratedServer = server;
 	}
-	
-	public static MDClient getInstance()
-	{
+
+	public static MDClient getInstance() {
 		return instance;
 	}
 }
